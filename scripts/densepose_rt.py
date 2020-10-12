@@ -3,7 +3,7 @@ from cv2 import aruco
 import matplotlib.pyplot as plt
 import math
 import time
-import cv2
+from cv2 import cv2
 
 
 def multidim_intersect(arr1, arr2):
@@ -130,7 +130,7 @@ def initVideoStream():
 
 
 def getVideoStream(cap):
-    patch_size = 480
+    # patch_size = 480
     _, frame = cap.read()
     # frame = cv2.resize(frame, (patch_size, patch_size))
     frame = frame[:, 80:560]
@@ -207,7 +207,6 @@ def main():
     plt.show()
     # plt.pause(.00001)
     # plt.ioff()
-    # plt.show()
 
     cap.release()
     cv2.destroyAllWindows()

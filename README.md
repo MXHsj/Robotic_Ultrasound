@@ -6,14 +6,12 @@ This project aims to develop an augmented-reality based ultrasound scanning guid
 # Componentes
 
 ## 1. DensePose
----
 ### Installtion on Ubuntu 18.04
 1. installation steps https://colab.research.google.com/github/tugstugi/dl-colab-notebooks/blob/master/notebooks/DensePose.ipynb
 2. detailed notes http://linkinpark213.com/2018/11/18/densepose-minesweeping/
 
 
 ## 2. RealSense D435i
----
 ### Installation on Ubuntu 18.04
 1. librealsense https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md
     - Register the server's public key:
@@ -55,3 +53,6 @@ This project aims to develop an augmented-reality based ultrasound scanning guid
     pointcloud topic: /camera/depth/color/points
 
 2. python wrapper tutorials: https://github.com/IntelRealSense/librealsense/tree/master/wrappers/python/examples
+
+# Publications
+1. Bimbraw K., Ma X., Zhang Z., Zhang H. (2020) Augmented Reality-Based Lung Ultrasound Scanning Guidance. In: Hu Y. et al. (eds) Medical Ultrasound, and Preterm, Perinatal and Paediatric Image Analysis. ASMUS 2020, PIPPI 2020. Lecture Notes in Computer Science, vol 12437. Springer, Cham. https://doi.org/10.1007/978-3-030-60334-2_11

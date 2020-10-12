@@ -235,5 +235,7 @@ def initVideoStream():
 def getVideoStream(cap):
     # patch_size = 480
     _, frame = cap.read()
+    # frame = cv2.resize(frame, (patch_size, patch_size))
     frame = frame[:, 80:560]
+    # frame = cv2.flip(frame, -1)     # flip the frame
     return frame

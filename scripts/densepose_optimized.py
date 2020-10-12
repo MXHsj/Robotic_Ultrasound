@@ -182,7 +182,7 @@ def initVideoStream():
 
 
 def getVideoStream(cap):
-    patch_size = 480
+    # patch_size = 480
     _, frame = cap.read()
     frame = frame[:, 80:560]
     return frame
@@ -246,8 +246,8 @@ def main():
 
         cv2.imshow('frame', frame)
 
-        if key == ord('q'):   # quit
-            print('exit')
+        if key & 0xFF == ord('q') or key == 27:
+            cv2.destroyAllWindows()
             break
 
 

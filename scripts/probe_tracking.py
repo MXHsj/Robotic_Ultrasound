@@ -1,8 +1,8 @@
 import numpy as np
 from cv2 import aruco
+from cv2 import cv2
 import math
 import time
-from cv2 import cv2
 
 camera_matrix = np.array(
     [[662.1790, 0.0, 322.3619], [0.0, 662.8344, 252.0131], [0.0, 0.0, 1.0]])
@@ -170,7 +170,7 @@ def tipPose(corners, ids, frame):
 
 
 def initVideoStream():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(2)
     focus = 0               # min: 0, max: 255, increment:5
     cap.set(28, focus)      # manually set focus
     return cap
@@ -181,7 +181,7 @@ def getVideoStream(cap):
     _, frame = cap.read()
     # frame = cv2.resize(frame, (patch_size, patch_size))
     frame = frame[:, 80:560]
-    frame = cv2.flip(frame, -1)     # flip the frame
+    # frame = cv2.flip(frame, -1)     # flip the frame
     return frame
 
 
@@ -221,7 +221,7 @@ def main():
             frame = divide2region(frame, inferred, IUV_chest,
                                   target_u, target_v, (tip_x, tip_y))
 
-        frame = cv2.flip(frame, -1)     # flip back
+        # frame = cv2.flip(frame, -1)     # flip back
         cv2.imshow('overlay', frame)
         end = time.time()
         print("created mask in %.4f sec" % (end - start))
