@@ -2,11 +2,21 @@ import numpy as np
 import math
 from cv2 import aruco
 from cv2 import cv2
+from pyrealsense2 import pyrealsense2 as rs
+
 
 camera_matrix = np.array(
     [[662.1790, 0.0, 322.3619], [0.0, 662.8344, 252.0131], [0.0, 0.0, 1.0]])
 
 dist_coeff = np.array([0.0430651, -0.1456001, 0.0, 0.0])
+
+
+def multidim_intersect(arr1, arr2):
+    arr1_view = arr1.view([('', arr1.dtype)]*arr1.shape[1])
+    arr2_view = arr2.view([('', arr2.dtype)]*arr2.shape[1])
+    intersected = np.intersect1d(arr1_view, arr2_view)
+
+    return intersected.view(arr1.dtype).reshape(-1, arr1.shape[1])
 
 
 def rotationMatrixToEulerAngles(R):
