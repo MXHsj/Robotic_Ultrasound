@@ -118,9 +118,8 @@ def drawOverlay(frame, reg, reg_coord,  tip_coord):
     return frame
 
 
-def detectFiducial(frame):
+def detectFiducial(frame, fid_id=0):
     # marker detection
-    fid_id = 0
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     aruco_dict = aruco.Dictionary_get(aruco.DICT_4X4_250)
     parameters = aruco.DetectorParameters_create()
@@ -144,7 +143,7 @@ def detectFiducial(frame):
     return marker_frame, RotX_formatted
 
 
-def detectMarker(frame):
+def detectMarker(frame, num_markers=4):
     # marker detection
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     aruco_dict = aruco.Dictionary_get(aruco.DICT_6X6_250)
@@ -153,7 +152,6 @@ def detectMarker(frame):
         gray, aruco_dict, parameters=parameters)
     marker_frame = aruco.drawDetectedMarkers(frame.copy(), corners, ids)
     # marker position
-    num_markers = 4
     pos = np.zeros((num_markers, 2))
     for i in range(1, num_markers+1):
         try:
