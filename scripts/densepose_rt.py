@@ -3,6 +3,7 @@ from cv2 import aruco
 import matplotlib.pyplot as plt
 import math
 import time
+import csv
 from cv2 import cv2
 
 
@@ -12,6 +13,10 @@ def multidim_intersect(arr1, arr2):
     intersected = np.intersect1d(arr1_view, arr2_view)
 
     return intersected.view(arr1.dtype).reshape(-1, arr1.shape[1])
+
+
+def ismember(A, B):
+    return [np.sum(a == B) for a in A]
 
 
 def getBodyPart(IUV, part_id):
@@ -109,14 +114,14 @@ def detectMarker(frame):
 
 
 def trackMarker(corners, ids):
-    num_markers = 4
+    num_markers = 8
     pos = np.zeros((num_markers, 2))
-    for i in range(1, num_markers+1):
+    for i in range(num_markers):
         try:
             marker = corners[np.where(ids == i)[0][0]][0]
-            pos[i-1, :] = [marker[:, 0].mean(), marker[:, 1].mean()]
+            pos[i, :] = [marker[:, 0].mean(), marker[:, 1].mean()]
         except:
-            pos[i-1, :] = [-1, -1]      # if marker is not detected
+            pos[i, :] = [-1, -1]      # if marker is not detected
         # print("id{} center:".format(i), pos[i-1, 0], pos[i-1, 1])
 
     return pos
@@ -138,38 +143,46 @@ def getVideoStream(cap):
 
 
 def main():
-    part_id = 2     # 1 -> back; 2 -> torso
-
+    part_id = 2     # 1 -> posterior; 2 -> anterior
     if part_id == 2:
-        target_u = [60, 100, 60, 100]
-        target_v = [152, 167, 85, 82]
+        # target_u = [60, 100, 60, 100]
+        # target_v = [152, 167, 85, 82]
+        target_u = [60, 100, 60, 100, 60, 100, 60, 100]
+        target_v = [142, 157, 180, 180, 95, 92, 60, 65]
     elif part_id == 1:
         target_u = [80, 80]
         target_v = [167, 82]
 
-    cap = initVideoStream()
-    curr_time = 0
     time = list()
     reg1_error = list()
     reg2_error = list()
     reg3_error = list()
     reg4_error = list()
-    fig = plt.figure()
+    reg5_error = list()
+    reg6_error = list()
+    reg7_error = list()
+    reg8_error = list()
+    plt.figure()
     # plt.ion()
+
+    cap = initVideoStream()
+    curr_time = 0
 
     while(True):
         frame = getVideoStream(cap)
         # cv2.imshow('frame', frame)
 
         save_path = '/home/xihan/Myworkspace/lung_ultrasound/image_buffer/incoming.png'
+        load_path = '/home/xihan/Myworkspace/lung_ultrasound/infer_out/incoming_IUV.png'
+        data_record = '/home/xihan/Myworkspace/lung_ultrasound/scripts/overlay_error.csv'
+
         cv2.imwrite(save_path, frame)
 
         frame, corners, ids = detectMarker(frame)
         pos = trackMarker(corners, ids)
 
         try:
-            inferred = cv2.imread(
-                '/home/xihan/Myworkspace/lung_ultrasound/infer_out/incoming_IUV.png')
+            inferred = cv2.imread(load_path)
         except Exception as e:
             print('error: '+str(e))
 
@@ -177,24 +190,35 @@ def main():
             IUV_chest = getBodyPart(inferred, part_id)
             frame, errors = divide2region(
                 frame, IUV_chest, target_u, target_v, pos)
+
             reg1_error.append(errors[0])
             reg2_error.append(errors[1])
             reg3_error.append(errors[2])
             reg4_error.append(errors[3])
-        else:
-            reg1_error.append(-1)
-            reg2_error.append(-1)
-            reg3_error.append(-1)
-            reg4_error.append(-1)
+            reg5_error.append(errors[4])
+            reg6_error.append(errors[5])
+            reg7_error.append(errors[6])
+            reg8_error.append(errors[7])
 
-        cv2.imshow('overlay', frame)
+            row2write = [errors[0], errors[1], errors[2], errors[3],
+                         errors[4], errors[5], errors[6], errors[7]]
+
+            with open(data_record, 'a') as file_out:
+                writer = csv.writer(file_out)
+                writer.writerow(row2write)
+
+            curr_time = curr_time + 1
+        else:
+            pass
+
+        showFrame = cv2.resize(frame, (720, 720))
+        # showFrame = frame
+        cv2.imshow('overlay', showFrame)
         time.append(curr_time)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):   # quit
             print('exiting ...')
             break
-
-        curr_time = curr_time + 1
 
     # plt.cla()
     plt.plot(time, reg1_error, label='region 1 error')

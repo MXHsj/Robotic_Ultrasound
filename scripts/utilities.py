@@ -136,11 +136,21 @@ def detectFiducial(frame, fid_id=0):
 
         rmat = cv2.Rodrigues(rvecs)[0]
         RotX = rotationMatrixToEulerAngles(rmat)[1]
+        RotY = rotationMatrixToEulerAngles(rmat)[0]
+        if RotY > 0:
+            RotY = 3.14 - RotY
+        elif RotY <= 0:
+            RotY = -3.14 - RotY
+        RotZ = rotationMatrixToEulerAngles(rmat)[2]
         RotX_formatted = float("{0:.2f}".format(-RotX*180/3.14))     # 2 digits
+        RotY_formatted = float("{0:.2f}".format(RotY*180/3.14))     # 2 digits
+        RotZ_formatted = float("{0:.2f}".format(RotZ*180/3.14))
     except:
         RotX_formatted = -1
+        RotY_formatted = -1
+        RotZ_formatted = -1
 
-    return marker_frame, RotX_formatted
+    return marker_frame, RotX_formatted, RotY_formatted, RotZ_formatted
 
 
 def detectMarker(frame, num_markers=4):
@@ -153,7 +163,7 @@ def detectMarker(frame, num_markers=4):
     marker_frame = aruco.drawDetectedMarkers(frame.copy(), corners, ids)
     # marker position
     pos = np.zeros((num_markers, 2))
-    for i in range(1, num_markers+1):
+    for i in range(num_markers):
         try:
             marker = corners[np.where(ids == i)[0][0]][0]
             pos[i-1, :] = [marker[:, 0].mean(), marker[:, 1].mean()]
@@ -179,7 +189,7 @@ def getUV(IUV_chest, pos):
 
 
 def tipPose(corners, ids, frame):
-    probeMarkerID = 3
+    probeMarkerID = 0
     Pc = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]  # world -> camera
     Ptip_left = [[-0.06], [0.03], [-0.1], [1.0]]
     Ptip_right = [[-0.06], [-0.03], [-0.1], [1.0]]
@@ -233,8 +243,8 @@ def tipPose(corners, ids, frame):
     return x_curr, y_curr, frame
 
 
-def initVideoStream():
-    cap = cv2.VideoCapture(2)
+def initVideoStream(camID=2):
+    cap = cv2.VideoCapture(camID)
     focus = 0               # min: 0, max: 255, increment:5
     cap.set(28, focus)      # manually set focus
     return cap
