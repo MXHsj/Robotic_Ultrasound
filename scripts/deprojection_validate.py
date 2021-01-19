@@ -1,20 +1,63 @@
-#! /usr/bin/env python3
-
 '''
 experimenting deprojection in realsense SDK
 '''
 import csv
+import math
 import numpy as np
 from cv2 import cv2
-import rospy
+from cv2 import aruco
 from pyrealsense2 import pyrealsense2 as rs
 
 
-# 3D to 2D projection
 camera_matrix = np.array(
     [[610.899, 0.0, 324.496], [0.0, 610.824, 234.984], [0.0, 0.0, 1.0]])
-Pc = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]  # world -> camera
-xyz2uv = np.matmul(camera_matrix, Pc)
+
+dist_coeff = np.array([0.0430651, -0.1456001, 0.0, 0.0])
+
+
+def increase_brightness(img, value=30):
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+
+    lim = 255 - value
+    v[v > lim] = 255
+    v[v <= lim] += value
+
+    final_hsv = cv2.merge((h, s, v))
+    img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
+    return img
+
+
+def detectFiducial(frame, fid_id=0):
+    # marker detection
+    frame = increase_brightness(frame, 20)
+    # frame = cv2.blur(frame, (3, 3))
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # blur = cv2.blur(gray, (3, 3))
+    aruco_dict = aruco.Dictionary_get(aruco.DICT_4X4_250)
+    parameters = aruco.DetectorParameters_create()
+    corners, ids, _ = aruco.detectMarkers(
+        gray, aruco_dict, parameters=parameters)
+    marker_frame = aruco.drawDetectedMarkers(frame.copy(), corners, ids)
+    # pose estimation
+    try:
+        loc_marker = corners[np.where(ids == fid_id)[0][0]]
+        rvecs, tvecs, _objPoints = aruco.estimatePoseSingleMarkers(
+            loc_marker, 0.047, camera_matrix, dist_coeff)
+        marker_frame = aruco.drawAxis(
+            frame, camera_matrix, dist_coeff, rvecs, tvecs, 0.12)
+        rmat = cv2.Rodrigues(rvecs)[0]
+        # print(tvecs)
+        tvec = np.transpose(tvecs)[:, 0, 0]
+        # print("marker pose: \n", rmat[:, 2])
+        UV = [loc_marker[0][:, 0].mean(), loc_marker[0][:, 1].mean()]
+    except:
+        rmat = -1*np.ones([3, 3])
+        UV = [-1, -1]
+        tvec = [-1, -1, -1]
+
+    return marker_frame, UV, rmat[:, 2], tvec
 
 
 def getNormalVector(p0, p1, p2):
@@ -54,6 +97,7 @@ def getSurfaceNormal(point_x, point_y, point_z):
     norm_vec = norm1+norm2+norm3+norm4+norm5+norm6+norm7+norm8
     norm_vec = - norm_vec  # make vector pointing inwards the surface
     norm_vec = norm_vec/np.linalg.norm(norm_vec)
+    # print("surface normal: ", norm_vec)
     return norm_vec
 
 
@@ -61,27 +105,27 @@ def my_floor(a, precision=0):
     return np.round(a - 0.5 * 10**(-precision), precision)
 
 
-def ROIshape(center, edge=14):
+def ROIshape(center, side=25):
     # square region
     col_vec = [center[0],
-               center[0]-edge/2,
-               center[0]-edge/2,
-               center[0]-edge/2,
+               center[0]-side/2,
+               center[0]-side/2,
+               center[0]-side/2,
                center[0],
-               center[0]+edge/2,
-               center[0]+edge/2,
-               center[0]+edge/2,
+               center[0]+side/2,
+               center[0]+side/2,
+               center[0]+side/2,
                center[0]]
 
     row_vec = [center[1],
-               center[1]+edge/2,
+               center[1]+side/2,
                center[1],
-               center[1]-edge/2,
-               center[1]-edge/2,
-               center[1]-edge/2,
+               center[1]-side/2,
+               center[1]-side/2,
+               center[1]-side/2,
                center[1],
-               center[1]+edge/2,
-               center[1]+edge/2]
+               center[1]+side/2,
+               center[1]+side/2]
     return col_vec, row_vec
 
 
@@ -103,10 +147,8 @@ spat_filter = rs.spatial_filter()       # reduce temporal noise
 spat_filter.set_option(rs.option.filter_smooth_alpha, 1)
 spat_filter.set_option(rs.option.filter_smooth_delta, 50)
 
-col_vec, row_vec = ROIshape([320, 240])
 
 isRecoding = False
-recCount = 0
 print(" s->start recording \n e->end recording \n q->quit")
 try:
     while True:
@@ -121,7 +163,6 @@ try:
         # apply depth filters
         filtered = spat_filter.process(depth_frame)
         filtered = hole_filling.process(filtered)
-        # filtered = depth_frame
 
         if not depth_frame or not color_frame:
             continue
@@ -129,6 +170,13 @@ try:
         # Convert images to numpy arrays
         depth_image = np.asanyarray(filtered.get_data())
         color_image = np.asanyarray(color_frame.get_data())
+
+        # detect fiducial marker
+        marker_frame, markerUV, rvec, tvec = detectFiducial(color_image)
+        if sum(markerUV) > 0:
+            col_vec, row_vec = ROIshape(markerUV)
+        else:
+            col_vec, row_vec = ROIshape([320, 240])
 
         # Apply colormap on depth image (image must be converted to 8-bit per pixel first)
         depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(
@@ -139,11 +187,14 @@ try:
         point_y = []
         point_z = []
         depth_intrin = depth_frame.profile.as_video_stream_profile().intrinsics
+        # print(depth_intrin)
+
+        # store 9 points
         for pnt in range(len(row_vec)):
-            curr_col = round(col_vec[pnt])
-            curr_row = round(row_vec[pnt])
+            curr_col = int(col_vec[pnt])
+            curr_row = int(row_vec[pnt])
             color_image = cv2.circle(
-                color_image, (curr_col, curr_row), 2, (30, 90, 30), -1)
+                marker_frame, (curr_col, curr_row), 1, (30, 90, 30), -1)
             depth_pixel = [curr_col, curr_row]
             depth_in_met = depth_frame.as_depth_frame().get_distance(curr_col, curr_row)
             # deprojection
@@ -153,54 +204,50 @@ try:
                 depth_intrin, depth_pixel, depth_in_met)[1]
             z = rs.rs2_deproject_pixel_to_point(
                 depth_intrin, depth_pixel, depth_in_met)[2]
-            point_x.append(x)
-            point_y.append(y)
-            point_z.append(z)
+            if x != 0 and y != 0 and z != 0:
+                point_x.append(x)
+                point_y.append(y)
+                point_z.append(z)
+            else:       # points closer than 0.28m are bad points
+                point_x.append(-1)
+                point_y.append(-1)
+                point_z.append(-1)
 
+        # store suface normal
         norm_vec = getSurfaceNormal(point_x, point_y, point_z)
         point_x.append(my_floor(norm_vec[0], 3))
         point_y.append(my_floor(norm_vec[1], 3))
         point_z.append(my_floor(norm_vec[2], 3))
 
+        # store ground truth rotation
+        point_x.append(rvec[0])
+        point_y.append(rvec[1])
+        point_z.append(rvec[2])
+
+        # store ground truth translation
+        point_x.append(tvec[0])
+        point_y.append(tvec[1])
+        point_z.append(tvec[2])
+
         # write data into csv file
         if isRecoding:
-            if recCount < 400:
-                with open('./surface_normal.csv', 'a') as file_out:
-                    writer = csv.writer(file_out)
-                    writer.writerow(point_x)
-                    writer.writerow(point_y)
-                    writer.writerow(point_z)
-                recCount += 1
-            else:
-                isRecoding = False
-                recCount = 0
-                print("finish recording")
+            with open('./surface_normal.csv', 'a') as file_out:
+                writer = csv.writer(file_out)
+                writer.writerow(point_x)
+                writer.writerow(point_y)
+                writer.writerow(point_z)
         else:
             pass
 
         # Stack both images horizontally
         # images = np.vstack((color_image, depth_colormap))
 
-        # draw surface normal vector on the output frame
-        try:
-            Pz_xyz = [point_x[0], point_y[0], point_z[0]] + 0.04*norm_vec
-            Pz_xyz = np.append(Pz_xyz, 1.0)
-            Pz_uv = np.matmul(xyz2uv, Pz_xyz)
-            Pz_uv = [Pz_uv[0]/Pz_uv[2], Pz_uv[1]/Pz_uv[2]]
-            P0_xyz = [point_x[0], point_y[0], point_z[0], 1.0]
-            P0_uv = np.matmul(xyz2uv, P0_xyz)
-            P0_uv = [P0_uv[0]/P0_uv[2], P0_uv[1]/P0_uv[2]]
-            cv2.line(color_image,
-                     (int(P0_uv[0]), int(P0_uv[1])),
-                     (int(Pz_uv[0]), int(Pz_uv[1])),
-                     (200, 20, 20), 2)
-        except:
-            print("target out of range")
+        # Show images
         cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
         cv2.imshow('RealSense', color_image)
 
         key = cv2.waitKey(1)
-        if key == ord('q'):
+        if key & 0xFF == ord('q') or key == 27:
             print('quit')
             break
         elif key == ord('s'):
@@ -208,7 +255,6 @@ try:
             print('start recoding data')
         elif key == ord('e'):
             isRecoding = False
-            recCount = 0
             print('end recoding data')
 
 finally:

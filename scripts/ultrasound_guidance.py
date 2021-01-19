@@ -29,7 +29,7 @@ def main():
         target_u = [80, 80]
         target_v = [152, 85]
 
-    cap = uti.initVideoStream()
+    cap = uti.initVideoStream(0)
     save_path = '/home/xihan/Myworkspace/lung_ultrasound/image_buffer/incoming.png'
     load_path = '/home/xihan/Myworkspace/lung_ultrasound/infer_out/incoming_IUV.png'
 
@@ -56,7 +56,8 @@ def main():
                                       target_u, target_v, (tip_x, tip_y))
 
         # frame = cv2.flip(frame, -1)     # flip back
-        cv2.imshow('overlay', frame)
+        showFrame = cv2.resize(frame, (960, 960))
+        cv2.imshow('overlay', showFrame)
         end = time.time()
         print("created mask in %.4f sec" % (end - start))
 

@@ -166,9 +166,9 @@ def detectMarker(frame, num_markers=4):
     for i in range(num_markers):
         try:
             marker = corners[np.where(ids == i)[0][0]][0]
-            pos[i-1, :] = [marker[:, 0].mean(), marker[:, 1].mean()]
+            pos[i, :] = [marker[:, 0].mean(), marker[:, 1].mean()]
         except:
-            pos[i-1, :] = [-1, -1]      # if marker is not detected
+            pos[i, :] = [-1, -1]      # if marker is not detected
         # print("id{} center:".format(i), pos[i-1, 0], pos[i-1, 1])
 
     return marker_frame, pos

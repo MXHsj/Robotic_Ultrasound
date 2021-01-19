@@ -1,8 +1,6 @@
 import numpy as np
 from cv2 import aruco
 import matplotlib.pyplot as plt
-import math
-import time
 import csv
 from cv2 import cv2
 

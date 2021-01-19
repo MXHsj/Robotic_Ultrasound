@@ -1,6 +1,5 @@
 import os
 import csv
-import time
 from cv2 import cv2
 import utilities as uti
 
@@ -24,7 +23,7 @@ for it in range(n_sample-10):
     mask_name = "image"+str(it+1)+"_IUV.png"
 
     frame = cv2.imread(os.path.join(img_dir, img_name))
-    frame, angleX = uti.detectFiducial(frame)   # detect fiducial marker
+    frame, angleX, angleY, angleZ = uti.detectFiducial(frame)
     frame, pos = uti.detectMarker(
         frame, n_marker)        # detect overlay marker
     # print(angleX)
@@ -41,13 +40,13 @@ for it in range(n_sample-10):
         writer = csv.writer(file_out)
         for i in range(len(UV)):
             writer.writerow(
-                [i+1, angleX, UV[i, 0]])
+                [i+1, angleX, angleY, angleZ, UV[i, 0]])
     # save u
     with open(v_record, 'a') as file_out:
         writer = csv.writer(file_out)
         for i in range(len(UV)):
             writer.writerow(
-                [i+1, angleX, UV[i, 1]])
+                [i+1, angleX, angleY, angleZ, UV[i, 1]])
 
     # cv2.imshow('preview', frame)
     # cv2.imshow('preview', mask)
