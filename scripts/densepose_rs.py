@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 import numpy as np
 from cv2 import aruco
-# import matplotlib.pyplot as plt
+from pyrealsense2 import pyrealsense2 as rs
 import csv
 from cv2 import cv2
 
@@ -10,19 +10,13 @@ def multidim_intersect(arr1, arr2):
     arr1_view = arr1.view([('', arr1.dtype)]*arr1.shape[1])
     arr2_view = arr2.view([('', arr2.dtype)]*arr2.shape[1])
     intersected = np.intersect1d(arr1_view, arr2_view)
-
     return intersected.view(arr1.dtype).reshape(-1, arr1.shape[1])
-
-
-def ismember(A, B):
-    return [np.sum(a == B) for a in A]
 
 
 def getBodyPart(IUV, part_id):
     IUV_chest = np.zeros((IUV.shape[0], IUV.shape[1], IUV.shape[2]))
     torso_idx = np.where(IUV[:, :, 0] == part_id)
     IUV_chest[torso_idx] = IUV[torso_idx]
-
     return IUV_chest
 
 
@@ -55,29 +49,6 @@ def divide2region(frame, IUV_chest, target_u, target_v, pos):
         rcand = y_intersects
         ccand = x_intersects
 
-        # u2xy_new = np.array(u2xy_pair).transpose()
-        # v2xy_new = np.array(v2xy_pair).transpose()
-        # try:
-        #     xy_intersects = multidim_intersect(v2xy_new, u2xy_new)
-        #     print(xy_intersects)
-        #     # rcand.append(xy_intersects[1][0])
-        #     # ccand.append(xy_intersects[0][0])
-        #     # print(ccand)
-        # except Exception as e:
-        #     print('error: '+str(e))
-
-        # for uind in range(len(u2xy_pair[0])):
-        #     for vind in range(len(v2xy_pair[0])):
-        #         x_u = u2xy_pair[1][uind]
-        #         y_u = u2xy_pair[0][uind]
-        #         x_v = v2xy_pair[1][vind]
-        #         y_v = v2xy_pair[0][vind]
-        #         if x_u == x_v and y_u == y_v:       # if xy pair intersects
-        #             rcand.append(y_u)
-        #             ccand.append(x_u)
-
-        # print("\n rcand:", rcand, "\n ccand:", ccand)
-
         if len(rcand) > 0 and len(ccand) > 0:
             cen_col = int(np.mean(ccand))  # averaging col indicies
             cen_row = int(np.mean(rcand))  # averaging row indicies
@@ -96,7 +67,6 @@ def divide2region(frame, IUV_chest, target_u, target_v, pos):
 
         error_rec.append(error)
         print("region{} error: ".format(reg)+str(error))
-
     return frame, error_rec
 
 
@@ -108,7 +78,6 @@ def detectMarker(frame):
     corners, ids, _ = aruco.detectMarkers(
         gray, aruco_dict, parameters=parameters)
     marker_frame = aruco.drawDetectedMarkers(frame.copy(), corners, ids)
-
     return marker_frame, corners, ids
 
 
@@ -122,59 +91,50 @@ def trackMarker(corners, ids):
         except:
             pos[i, :] = [-1, -1]      # if marker is not detected
         # print("id{} center:".format(i), pos[i-1, 0], pos[i-1, 1])
-
     return pos
-
-
-def initVideoStream():
-    cap = cv2.VideoCapture(0)
-    focus = 0               # min: 0, max: 255, increment:5
-    cap.set(28, focus)      # manually set focus
-    return cap
-
-
-def getVideoStream(cap):
-    # patch_size = 480
-    _, frame = cap.read()
-    # frame = cv2.resize(frame, (patch_size, patch_size))
-    frame = frame[:, 80:560]
-    return frame
 
 
 def main():
     part_id = 2     # 1 -> posterior; 2 -> anterior
     if part_id == 2:
+        target_u = [60, 100, 60, 100]
+        target_v = [162, 162, 95, 95]
+        # target_u = [60, 100, 60, 100, 60, 100, 60, 100]
+        # target_v = [142, 157, 180, 180, 95, 92, 60, 65]
         # target_u = [60, 100, 60, 100]
-        # target_v = [152, 167, 85, 82]
-        target_u = [60, 100, 60, 100, 60, 100, 60, 100]
-        target_v = [142, 157, 180, 180, 95, 92, 60, 65]
+        # target_v = [155, 155, 105, 105]
     elif part_id == 1:
         target_u = [80, 80]
         target_v = [167, 82]
 
-    time = list()
-    reg1_error = list()
-    reg2_error = list()
-    reg3_error = list()
-    reg4_error = list()
-    reg5_error = list()
-    reg6_error = list()
-    reg7_error = list()
-    reg8_error = list()
-    # plt.figure()
-    # plt.ion()
+    # Configure depth and color streams
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    pipeline.start(config)
+    align = rs.align(rs.stream.color)
 
-    cap = initVideoStream()
-    curr_time = 0
+    save_path = '/home/xihan/Myworkspace/lung_ultrasound/image_buffer/incoming.png'
+    load_path = '/home/xihan/Myworkspace/lung_ultrasound/infer_out/incoming_IUV.png'
+    data_record = '/home/xihan/Myworkspace/lung_ultrasound/scripts/overlay_error.csv'
+    file_out = open(data_record, 'w')
+    writer = csv.writer(file_out)
 
-    while(True):
-        frame = getVideoStream(cap)
-        # cv2.imshow('frame', frame)
+    sample_size = 100
+    sample_count = 0
+    isRecording = False
+    while(sample_count < sample_size):
+        frames = pipeline.wait_for_frames()
 
-        save_path = '/home/xihan/Myworkspace/lung_ultrasound/image_buffer/incoming.png'
-        load_path = '/home/xihan/Myworkspace/lung_ultrasound/infer_out/incoming_IUV.png'
-        data_record = '/home/xihan/Myworkspace/lung_ultrasound/scripts/overlay_error.csv'
+        # align depth to color frame
+        aligned_frames = align.process(frames)
+        color_frame = aligned_frames.get_color_frame()
 
+        # Convert images to numpy arrays
+        color_image = np.asanyarray(color_frame.get_data())
+        color_image = color_image[:, 80:560]    # crop to square patch
+        frame = color_image
         cv2.imwrite(save_path, frame)
 
         frame, corners, ids = detectMarker(frame)
@@ -190,49 +150,30 @@ def main():
             frame, errors = divide2region(
                 frame, IUV_chest, target_u, target_v, pos)
 
-            reg1_error.append(errors[0])
-            reg2_error.append(errors[1])
-            reg3_error.append(errors[2])
-            reg4_error.append(errors[3])
-            reg5_error.append(errors[4])
-            reg6_error.append(errors[5])
-            reg7_error.append(errors[6])
-            reg8_error.append(errors[7])
-
-            row2write = [errors[0], errors[1], errors[2], errors[3],
-                         errors[4], errors[5], errors[6], errors[7]]
-
-            with open(data_record, 'a') as file_out:
-                writer = csv.writer(file_out)
-                writer.writerow(row2write)
-
-            curr_time = curr_time + 1
+            if errors[0] != -1 and errors[1] != -1 and errors[2] != -1 and errors[3] != -1:
+                if isRecording:
+                    row2write = [errors[0], errors[1], errors[2], errors[3]]
+                    writer.writerow(row2write)
+                    sample_count += 1
         else:
             pass
 
-        showFrame = cv2.resize(frame, (720, 720))
-        # showFrame = frame
-        cv2.imshow('overlay', showFrame)
-        time.append(curr_time)
+        # showFrame = cv2.resize(frame, (720, 720))
+        cv2.imshow('overlay', frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):   # quit
+        key = cv2.waitKey(1)
+        if key & 0xFF == ord('q'):   # quit
             print('exiting ...')
             break
+        elif key == ord('s'):
+            print('start recording')
+            isRecording = True
+        elif key == ord('e'):
+            print('end recording')
+            isRecording = False
 
-    # plt.cla()
-    # plt.plot(time, reg1_error, label='region 1 error')
-    # plt.plot(time, reg2_error, label='region 2 error')
-    # plt.plot(time, reg3_error, label='region 3 error')
-    # plt.plot(time, reg4_error, label='region 4 error')
-    # plt.ylabel('error in pixels')
-    # plt.xlabel('time stamp')
-    # plt.legend(loc="upper left")
-    # plt.show()
-    # plt.pause(.00001)
-    # plt.ioff()
-
-    cap.release()
     cv2.destroyAllWindows()
+    file_out.close()
 
 
 if __name__ == "__main__":

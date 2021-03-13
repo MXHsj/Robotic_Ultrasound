@@ -2,17 +2,25 @@
 experimenting deprojection in realsense SDK
 '''
 import csv
-import math
 import numpy as np
 from cv2 import cv2
 from cv2 import aruco
 from pyrealsense2 import pyrealsense2 as rs
 
 
-camera_matrix = np.array(
-    [[610.899, 0.0, 324.496], [0.0, 610.824, 234.984], [0.0, 0.0, 1.0]])
-
 dist_coeff = np.array([0.0430651, -0.1456001, 0.0, 0.0])
+# dist_coeff = np.array([0.0, 0.0, 0.0, 0.0])
+
+camera_matrix = np.array(   # lab realsense
+    [[610.899, 0.0, 324.496],
+     [0.0, 610.824, 234.984],
+     [0.0, 0.0, 1.0]])
+
+# Ran's realsense
+# camera_matrix = np.array(   # Ran's realsense
+#     [[610.899, 0.0, 326.496],
+#      [0.0, 610.824, 250.984],
+#      [0.0, 0.0, 1.0]])
 
 
 def increase_brightness(img, value=30):
@@ -46,7 +54,7 @@ def detectFiducial(frame, fid_id=0):
         rvecs, tvecs, _objPoints = aruco.estimatePoseSingleMarkers(
             loc_marker, 0.047, camera_matrix, dist_coeff)
         marker_frame = aruco.drawAxis(
-            frame, camera_matrix, dist_coeff, rvecs, tvecs, 0.12)
+            frame, camera_matrix, dist_coeff, rvecs, tvecs, 0.1)
         rmat = cv2.Rodrigues(rvecs)[0]
         # print(tvecs)
         tvec = np.transpose(tvecs)[:, 0, 0]
@@ -105,7 +113,7 @@ def my_floor(a, precision=0):
     return np.round(a - 0.5 * 10**(-precision), precision)
 
 
-def ROIshape(center, side=25):
+def ROIshape(center, side=14):
     # square region
     col_vec = [center[0],
                center[0]-side/2,
@@ -149,115 +157,120 @@ spat_filter.set_option(rs.option.filter_smooth_delta, 50)
 
 
 isRecoding = False
+sample_size = 300
+sample_count = 0
 print(" s->start recording \n e->end recording \n q->quit")
 try:
-    while True:
-        # Wait for a coherent pair of frames: depth and color
-        frames = pipeline.wait_for_frames()
+    with open('./surface_normal.csv', 'w') as file_out:
+        writer = csv.writer(file_out)
+        while sample_count < sample_size:
+            # Wait for a coherent pair of frames: depth and color
+            frames = pipeline.wait_for_frames()
 
-        # align depth to color frame
-        aligned_frames = align.process(frames)
-        depth_frame = aligned_frames.get_depth_frame()
-        color_frame = aligned_frames.get_color_frame()
+            # align depth to color frame
+            aligned_frames = align.process(frames)
+            depth_frame = aligned_frames.get_depth_frame()
+            color_frame = aligned_frames.get_color_frame()
 
-        # apply depth filters
-        filtered = spat_filter.process(depth_frame)
-        filtered = hole_filling.process(filtered)
+            # apply depth filters
+            filtered = spat_filter.process(depth_frame)
+            filtered = hole_filling.process(filtered)
 
-        if not depth_frame or not color_frame:
-            continue
+            if not depth_frame or not color_frame:
+                continue
 
-        # Convert images to numpy arrays
-        depth_image = np.asanyarray(filtered.get_data())
-        color_image = np.asanyarray(color_frame.get_data())
+            # Convert images to numpy arrays
+            depth_image = np.asanyarray(filtered.get_data())
+            color_image = np.asanyarray(color_frame.get_data())
 
-        # detect fiducial marker
-        marker_frame, markerUV, rvec, tvec = detectFiducial(color_image)
-        if sum(markerUV) > 0:
-            col_vec, row_vec = ROIshape(markerUV)
-        else:
-            col_vec, row_vec = ROIshape([320, 240])
+            # detect fiducial marker
+            marker_frame, markerUV, rvec, tvec = detectFiducial(color_image)
+            if sum(markerUV) > 0:
+                col_vec, row_vec = ROIshape(markerUV)
+            else:
+                col_vec, row_vec = ROIshape([320, 240])
 
-        # Apply colormap on depth image (image must be converted to 8-bit per pixel first)
-        depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(
-            depth_image, alpha=0.03), cv2.COLORMAP_JET)
+            # Apply colormap on depth image (image must be converted to 8-bit per pixel first)
+            depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(
+                depth_image, alpha=0.03), cv2.COLORMAP_JET)
 
-        # get corresponding xyz from uv
-        point_x = []
-        point_y = []
-        point_z = []
-        depth_intrin = depth_frame.profile.as_video_stream_profile().intrinsics
-        # print(depth_intrin)
+            # get corresponding xyz from uv
+            point_x = []
+            point_y = []
+            point_z = []
+            depth_intrin = depth_frame.profile.as_video_stream_profile().intrinsics
+            # print(depth_intrin)
 
-        # store 9 points
-        for pnt in range(len(row_vec)):
-            curr_col = int(col_vec[pnt])
-            curr_row = int(row_vec[pnt])
-            color_image = cv2.circle(
-                marker_frame, (curr_col, curr_row), 1, (30, 90, 30), -1)
-            depth_pixel = [curr_col, curr_row]
-            depth_in_met = depth_frame.as_depth_frame().get_distance(curr_col, curr_row)
-            # deprojection
-            x = rs.rs2_deproject_pixel_to_point(
-                depth_intrin, depth_pixel, depth_in_met)[0]
-            y = rs.rs2_deproject_pixel_to_point(
-                depth_intrin, depth_pixel, depth_in_met)[1]
-            z = rs.rs2_deproject_pixel_to_point(
-                depth_intrin, depth_pixel, depth_in_met)[2]
-            if x != 0 and y != 0 and z != 0:
-                point_x.append(x)
-                point_y.append(y)
-                point_z.append(z)
-            else:       # points closer than 0.28m are bad points
-                point_x.append(-1)
-                point_y.append(-1)
-                point_z.append(-1)
+            # store 9 points
+            for pnt in range(len(row_vec)):
+                curr_col = int(col_vec[pnt])
+                curr_row = int(row_vec[pnt])
+                color_image = cv2.circle(
+                    marker_frame, (curr_col, curr_row), 1, (30, 90, 30), -1)
+                depth_pixel = [curr_col, curr_row]
+                depth_in_met = depth_frame.as_depth_frame().get_distance(curr_col, curr_row)
+                # deprojection
+                x = rs.rs2_deproject_pixel_to_point(
+                    depth_intrin, depth_pixel, depth_in_met)[0]
+                y = rs.rs2_deproject_pixel_to_point(
+                    depth_intrin, depth_pixel, depth_in_met)[1]
+                z = rs.rs2_deproject_pixel_to_point(
+                    depth_intrin, depth_pixel, depth_in_met)[2]
+                if x != 0 and y != 0 and z != 0:
+                    point_x.append(x)
+                    point_y.append(y)
+                    point_z.append(z)
+                else:       # points closer than 0.28m are bad points
+                    point_x.append(-1)
+                    point_y.append(-1)
+                    point_z.append(-1)
 
-        # store suface normal
-        norm_vec = getSurfaceNormal(point_x, point_y, point_z)
-        point_x.append(my_floor(norm_vec[0], 3))
-        point_y.append(my_floor(norm_vec[1], 3))
-        point_z.append(my_floor(norm_vec[2], 3))
+            # store suface normal
+            norm_vec = getSurfaceNormal(point_x, point_y, point_z)
+            point_x.append(my_floor(norm_vec[0], 3))
+            point_y.append(my_floor(norm_vec[1], 3))
+            point_z.append(my_floor(norm_vec[2], 3))
 
-        # store ground truth rotation
-        point_x.append(rvec[0])
-        point_y.append(rvec[1])
-        point_z.append(rvec[2])
+            # store ground truth rotation
+            point_x.append(rvec[0])
+            point_y.append(rvec[1])
+            point_z.append(rvec[2])
 
-        # store ground truth translation
-        point_x.append(tvec[0])
-        point_y.append(tvec[1])
-        point_z.append(tvec[2])
+            # store ground truth translation
+            point_x.append(tvec[0])
+            point_y.append(tvec[1])
+            point_z.append(tvec[2])
 
-        # write data into csv file
-        if isRecoding:
-            with open('./surface_normal.csv', 'a') as file_out:
-                writer = csv.writer(file_out)
+            # write data into csv file
+            if isRecoding:
                 writer.writerow(point_x)
                 writer.writerow(point_y)
                 writer.writerow(point_z)
-        else:
-            pass
+                sample_count += 1
+                print("number of samples: ", sample_count)
+            else:
+                pass
 
-        # Stack both images horizontally
-        # images = np.vstack((color_image, depth_colormap))
+            # Stack both images horizontally
+            # images = np.vstack((color_image, depth_colormap))
 
-        # Show images
-        cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
-        cv2.imshow('RealSense', color_image)
+            # Show images
+            cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+            cv2.imshow('RealSense', color_image)
 
-        key = cv2.waitKey(1)
-        if key & 0xFF == ord('q') or key == 27:
-            print('quit')
-            break
-        elif key == ord('s'):
-            isRecoding = True
-            print('start recoding data')
-        elif key == ord('e'):
-            isRecoding = False
-            print('end recoding data')
+            key = cv2.waitKey(1)
+            if key & 0xFF == ord('q') or key == 27:
+                print('quit')
+                break
+            elif key == ord('s'):
+                isRecoding = True
+                print('start recoding data')
+            elif key == ord('e'):
+                isRecoding = False
+                print('end recoding data')
 
 finally:
+    print("Finished.")
     # Stop streaming
     pipeline.stop()
     cv2.destroyAllWindows()
