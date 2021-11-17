@@ -9,7 +9,8 @@ This project aims to develop an augmented-reality based ultrasound scanning guid
 ### Installtion on Ubuntu 18.04
 1. installation steps https://colab.research.google.com/github/tugstugi/dl-colab-notebooks/blob/master/notebooks/DensePose.ipynb
 2. detailed notes http://linkinpark213.com/2018/11/18/densepose-minesweeping/
-
+3. additional packges required in anaconda2:
+    1. pip install chumpy
 
 ## 2. RealSense D435i
 ### Installation on Ubuntu 18.04
